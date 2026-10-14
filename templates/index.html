@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudOS Studio — OS Resource Allocation & Scheduling Simulator</title>
+  <meta name="description" content="Interactive Operating System simulator demonstrating CPU Scheduling, Banker's Deadlock Avoidance, Multi-Core Processing, Memory Paging, and Performance Metrics." />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="scanlines"></div>
+
+  <!-- Deadlock Alert Banner -->
+  <div id="deadlock-alert" class="deadlock-banner hidden">
+    <div class="deadlock-content">
+      <span class="deadlock-icon">⚠️</span>
+      <div class="deadlock-text">
+        <strong>CRITICAL DEADLOCK DETECTED!</strong>
+        <p id="deadlock-msg">Processes are stuck in a circular wait condition. Available resources cannot satisfy any waiting process because Banker's avoidance is disabled.</p>
+      </div>
+      <button type="button" id="btn-fix-deadlock" class="btn btn-warning">Enable Banker's &amp; Reset</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">OS LAB</div>
+        <div class="brand-info">
+          <h1>CloudOS Studio</h1>
+          <p class="subtitle">Cloud Resource Allocation &amp; Process Scheduling Simulator</p>
+        </div>
+      </div>
+
+      <div class="header-status-pills">
+        <div class="status-pill tick-pill">
+          <span class="pill-label">CLOCK</span>
+          <span class="pill-val mono" id="tick-val">t=0</span>
+        </div>
+        <div class="status-pill">
+          <span class="pill-label">SCHEDULER</span>
+          <span class="pill-val highlight" id="scheduler-badge">Round Robin</span>
+        </div>
+        <div class="status-pill">
+          <span class="pill-label">DEADLOCK</span>
+          <span class="pill-val badge-safe" id="deadlock-badge">✓ SAFE</span>
+        </div>
+        <div class="status-pill">
+          <span class="pill-label">BANKER'S</span>
+          <span class="pill-val badge-active" id="avoidance-badge">SHIELD ON</span>
+        </div>
+        <div class="status-pill">
+          <span class="pill-label">MEMORY</span>
+          <span class="pill-val badge-safe" id="memory-badge">NORMAL</span>
+        </div>
+        <div class="status-pill">
+          <span class="pill-label">CORES</span>
+          <span class="pill-val mono" id="cores-badge">1 Core</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" id="btn-open-settings" class="btn btn-secondary">
+          ⚙️ Edit Resources
+        </button>
+        <button type="button" id="btn-open-compare" class="btn btn-primary-glow">
+          ⚡ Compare Schedulers
+        </button>
+        <button type="button" id="btn-show-safe-seq" class="btn btn-secondary">
+          🔍 Safe Sequence Audit
+        </button>
+        <div class="dropdown">
+          <button type="button" class="btn btn-ghost" id="btn-export-dropdown">📥 Export CSV ▾</button>
+          <div class="dropdown-menu" id="export-menu">
+            <a href="/api/export/metrics" download="cloudos_metrics.csv">Export Process Metrics CSV</a>
+            <a href="/api/export/gantt" download="cloudos_gantt.csv">Export Gantt Timeline CSV</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+
+    <!-- Playback Control Center -->
+    <section class="panel control-bar-panel">
+      <div class="playback-controls">
+        <div class="btn-group">
+          <button type="button" id="btn-step-back" class="btn btn-playback" title="Step Back 1 Tick (Undo)">
+            ⏮ Step Back
+          </button>
+          <button type="button" id="btn-auto-play" class="btn btn-playback btn-play" title="Auto Run Continuous">
+            ▶ Play
+          </button>
+          <button type="button" id="btn-step-forward" class="btn btn-playback" title="Step Forward 1 Tick">
+            Step (+1) ⏭
+          </button>
+          <button type="button" id="btn-run-5" class="btn btn-playback">
+            +5 Ticks
+          </button>
+          <button type="button" id="btn-run-20" class="btn btn-playback">
+            +20 Ticks
+          </button>
+        </div>
+
+        <div class="speed-slider-wrap">
+          <label for="speed-slider">Speed: <span id="speed-label">1.0x</span></label>
+          <input type="range" id="speed-slider" min="100" max="1500" value="600" step="50" />
+        </div>
+
+        <div class="scenario-selector-wrap">
+          <label for="scenario-select">Scenarios:</label>
+          <select id="scenario-select">
+            <option value="default">Default Balanced Workload</option>
+            <option value="deadlock_trap">Deadlock Trap (Banker's Avoidance Demo)</option>
+            <option value="overloaded">Overloaded Memory &amp; System</option>
+            <option value="gpu_contention">GPU Resource Contention</option>
+            <option value="convoy_effect">Convoy Effect (FCFS vs SJF)</option>
+            <option value="priority_starvation">Priority Starvation &amp; Aging</option>
+            <option value="priority_inversion">Priority Inversion Guided Demo</option>
+          </select>
+          <button type="button" id="btn-load-scenario" class="btn btn-secondary">Load</button>
+          <button type="button" id="btn-random-workload" class="btn btn-ghost" title="Generate 4 Random Processes">🎲 Random</button>
+        </div>
+
+        <div class="reset-group">
+          <button type="button" id="btn-reload-demo" class="btn btn-ghost">Reset Demo</button>
+          <button type="button" id="btn-reset-all" class="btn btn-danger">Clear All</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Performance Metrics Cards (Image 1, #1) -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon wait-icon">⏳</div>
+        <div class="metric-body">
+          <span class="metric-label">Avg Waiting Time</span>
+          <div class="metric-val mono" id="metric-avg-wait">0.0 <span class="unit">ticks</span></div>
+          <span class="metric-sub">Time spent in READY queue</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon turn-icon">🔄</div>
+        <div class="metric-body">
+          <span class="metric-label">Avg Turnaround Time</span>
+          <div class="metric-val mono" id="metric-avg-turnaround">0.0 <span class="unit">ticks</span></div>
+          <span class="metric-sub">Arrival to completion</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon resp-icon">⚡</div>
+        <div class="metric-body">
+          <span class="metric-label">Avg Response Time</span>
+          <div class="metric-val mono" id="metric-avg-response">0.0 <span class="unit">ticks</span></div>
+          <span class="metric-sub">Time to first CPU dispatch</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon util-icon">💻</div>
+        <div class="metric-body">
+          <span class="metric-label">CPU Core Utilization</span>
+          <div class="metric-val mono" id="metric-cpu-util">0.0%</div>
+          <div class="metric-mini-bar">
+            <div class="mini-bar-fill" id="metric-cpu-bar" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon thru-icon">📈</div>
+        <div class="metric-body">
+          <span class="metric-label">Throughput</span>
+          <div class="metric-val mono" id="metric-throughput">0.000 <span class="unit">proc/tick</span></div>
+          <span class="metric-sub" id="metric-completed-ratio">0 of 0 completed</span>
+        </div>
+      </div>
+
+      <div class="metric-card banker-metric-card">
+        <div class="metric-icon shield-icon">🛡️</div>
+        <div class="metric-body">
+          <span class="metric-label">Banker's Safe Path</span>
+          <div class="safe-path-ticker mono" id="metric-safe-path">P1 → P2 → P3</div>
+          <span class="metric-sub" id="metric-safe-sub">Safe completion order</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Primary Workspace: Timeline, Resource Overview & Process Queue (Full Width) -->
+        <!-- Interactive Gantt Chart Timeline (Image 1, #2 & Multi-Core Image 2, #7) -->
+        <section class="panel gantt-panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <h2>Execution Timeline (Gantt Chart)</h2>
+              <span class="panel-badge" id="gantt-core-count">Multi-Core Timeline</span>
+            </div>
+            <div class="gantt-legend" id="gantt-legend"></div>
+          </div>
+          <div class="gantt-container" id="gantt-scroll-wrap">
+            <div class="gantt-chart" id="gantt-chart">
+              <div class="gantt-empty">Run simulation ticks to populate the CPU execution timeline...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Resource Usage Overview -->
+        <section class="panel resources-panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <h2>System Resources Overview</h2>
+              <span class="panel-hint">Multi-Resource Vector: [CPU, RAM, GPU, Storage]</span>
+            </div>
+            <button type="button" id="btn-edit-capacity-shortcut" class="btn btn-sm btn-secondary">
+              ⚙️ Edit Capacity
+            </button>
+          </div>
+          <div class="bars" id="resource-bars"></div>
+        </section>
+
+
+        <!-- Running Processes Table -->
+        <section class="panel processes-panel">
+          <div class="panel-header">
+            <h2>Process Workload Queue &amp; State</h2>
+            <span class="panel-hint">Real-time scheduling and execution metrics per process</span>
+          </div>
+          <div class="table-wrap">
+            <table class="processes-table">
+              <thead>
+                <tr>
+                  <th>PID</th>
+                  <th>Workload Name</th>
+                  <th>Priority</th>
+                  <th>Allocated / Need</th>
+                  <th>Burst</th>
+                  <th>Wait</th>
+                  <th>Turnaround</th>
+                  <th>Response</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="process-body"></tbody>
+            </table>
+          </div>
+        </section>
+    <!-- Lower Modular Grid: Banker's Lab, Memory Management, CPU Config, Admit Workload & Terminal Log -->
+    <div class="lower-dashboard-grid">
+        <!-- Banker's Algorithm & Deadlock Studio (Image 1, #3 & #4) -->
+        <section class="panel banker-panel">
+          <div class="panel-header">
+            <h2>Banker's Algorithm &amp; Deadlock Lab</h2>
+            <div class="toggle-wrap">
+              <span class="toggle-label">Avoidance:</span>
+              <button type="button" id="btn-toggle-avoidance" class="btn-toggle active" title="Toggle Banker's Deadlock Avoidance">
+                <span class="toggle-knob"></span>
+                <span id="avoidance-toggle-text">ON (Safe)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="banker-status-box" id="banker-status-card">
+            <div class="banker-status-row">
+              <span class="banker-key">Current State:</span>
+              <span class="badge-safe" id="banker-safe-status">SAFE</span>
+            </div>
+            <div class="banker-status-row">
+              <span class="banker-key">Safe Sequence:</span>
+              <span class="mono safe-seq-text" id="banker-seq-text">Computing...</span>
+            </div>
+            <div class="banker-actions-row">
+              <button type="button" id="btn-modal-proof" class="btn btn-sm btn-secondary">
+                View Mathematical Proof &amp; Matrix
+              </button>
+            </div>
+          </div>
+
+          <!-- Step-by-Step Resource Request Form -->
+          <div class="incremental-request-wrap">
+            <h3 class="subheading">Test Step-by-Step Resource Request</h3>
+            <p class="form-desc">Request resources dynamically. If Banker's Avoidance is ON, unsafe requests will be denied with proof!</p>
+            <form id="resource-request-form" class="request-form-inline">
+              <div class="form-row">
+                <label>Process:
+                  <select id="req-pid-select" required></select>
+                </label>
+              </div>
+              <div class="form-grid-4">
+                <label>CPU
+                  <input type="number" id="req-cpu" min="0" value="1" />
+                </label>
+                <label>RAM (GB)
+                  <input type="number" id="req-ram" min="0" value="2" />
+                </label>
+                <label>GPU
+                  <input type="number" id="req-gpu" min="0" value="0" />
+                </label>
+                <label>Storage (GB)
+                  <input type="number" id="req-storage" min="0" value="20" />
+                </label>
+              </div>
+              <div class="request-actions">
+                <button type="submit" class="btn btn-sm btn-primary">Request Resources</button>
+                <button type="button" id="btn-release-res" class="btn btn-sm btn-ghost">Release Held</button>
+              </div>
+            </form>
+            <div id="request-feedback" class="feedback-msg hidden"></div>
+          </div>
+        </section>
+
+        <!-- Memory Management & Paging Visualizer (Image 3, #11) -->
+        <section class="panel paging-panel">
+          <div class="panel-header">
+            <h2>Memory Management &amp; Paging</h2>
+            <div class="policy-select-wrap">
+              <label for="paging-policy-select">Policy:</label>
+              <select id="paging-policy-select">
+                <option value="LRU">LRU (Least Recently Used)</option>
+                <option value="FIFO">FIFO (First-In, First-Out)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="paging-stats-row">
+            <div class="paging-stat">
+              <span class="p-stat-val mono" id="p-hits">0</span>
+              <span class="p-stat-label">Page Hits</span>
+            </div>
+            <div class="paging-stat">
+              <span class="p-stat-val mono" id="p-faults">0</span>
+              <span class="p-stat-label">Page Faults</span>
+            </div>
+            <div class="paging-stat">
+              <span class="p-stat-val mono" id="p-hit-ratio">0%</span>
+              <span class="p-stat-label">Hit Ratio</span>
+            </div>
+            <div class="paging-stat">
+              <span class="p-stat-val mono" id="p-fault-ratio">0%</span>
+              <span class="p-stat-label">Fault Ratio</span>
+            </div>
+          </div>
+
+          <div class="paging-eviction-note" id="p-eviction-note">
+            No page evictions yet
+          </div>
+
+          <div class="memory-frames-grid" id="memory-frames-grid"></div>
+        </section>
+
+        <!-- Scheduling Algorithms, Multi-Core & Aging Config (Image 2, #5, #6, #7) -->
+        <section class="panel engine-settings-panel">
+          <div class="panel-header">
+            <h2>Scheduler &amp; CPU Configuration</h2>
+          </div>
+
+          <div class="settings-control-grid">
+            <div class="control-card full-col">
+              <label for="engine-scheduler-select">Scheduling Algorithm &amp; Quantum:</label>
+              <div class="sched-quantum-row">
+                <select id="engine-scheduler-select">
+                  <option value="Round Robin">Round Robin</option>
+                  <option value="FCFS">FCFS (First-Come First-Served)</option>
+                  <option value="Priority">Priority (Non-Preemptive)</option>
+                  <option value="Priority (Preemptive)">Priority (Preemptive)</option>
+                  <option value="SJF">SJF (Shortest Job First)</option>
+                  <option value="SRTF">SRTF (Shortest Remaining Time First)</option>
+                </select>
+                <div id="quantum-field-group" class="quantum-field-group">
+                  <span class="q-label">Quantum:</span>
+                  <input type="number" id="engine-quantum-val" min="1" max="20" value="2" title="Round Robin Time Quantum (ticks)" />
+                  <span class="q-unit">ticks</span>
+                </div>
+                <button type="button" id="btn-apply-engine-scheduler" class="btn btn-sm btn-primary">Apply</button>
+              </div>
+            </div>
+
+
+            <div class="control-card">
+              <label for="active-cores-select">Active CPU Cores (Multi-Core):</label>
+              <div class="input-with-btn">
+                <select id="active-cores-select">
+                  <option value="1">1 Core (Single CPU)</option>
+                  <option value="2">2 Cores (Dual Core)</option>
+                  <option value="4">4 Cores (Quad Core)</option>
+                  <option value="8">8 Cores (Octa Core)</option>
+                </select>
+                <button type="button" id="btn-apply-cores" class="btn btn-sm btn-secondary">Set</button>
+              </div>
+            </div>
+
+            <div class="control-card full-col">
+              <div class="aging-toggle-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="aging-toggle-cb" />
+                  <span><strong>Starvation Aging:</strong> Boost priority of starved waiting processes</span>
+                </label>
+                <div class="aging-interval-input">
+                  <span>Every</span>
+                  <input type="number" id="aging-interval-val" min="1" max="20" value="5" />
+                  <span>ticks</span>
+                  <button type="button" id="btn-apply-aging" class="btn btn-sm btn-ghost">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Add Process Workload Panel -->
+        <section class="panel add-workload-panel">
+          <div class="panel-header">
+            <h2>Admit New Workload</h2>
+          </div>
+          <form id="add-process-form" class="add-process-form">
+            <div class="form-field">
+              <label>Name <input name="name" id="add-name" required value="Custom App" /></label>
+            </div>
+            <div class="form-field">
+              <label>CPU Cores <input name="cpu" id="add-cpu" type="number" min="1" required value="2" /></label>
+            </div>
+            <div class="form-field">
+              <label>RAM (GB) <input name="ram_gb" id="add-ram" type="number" min="1" required value="4" /></label>
+            </div>
+            <div class="form-field">
+              <label>GPU Units <input name="gpu" id="add-gpu" type="number" min="0" value="0" /></label>
+            </div>
+            <div class="form-field">
+              <label>Storage (GB) <input name="storage_gb" type="number" min="1" value="50" /></label>
+            </div>
+            <div class="form-field">
+              <label>Burst (ticks) <input name="burst_time" type="number" min="1" value="10" /></label>
+            </div>
+            <div class="form-field">
+              <label>Priority (1=High) <input name="priority" type="number" min="1" max="10" value="4" /></label>
+            </div>
+            <div class="form-field form-submit-field">
+              <button type="submit" class="btn btn-primary">Admit Process</button>
+            </div>
+          </form>
+          <p id="add-process-error" class="error-msg hidden"></p>
+        </section>
+
+        <!-- Live Terminal Event Log -->
+        <section class="panel log-panel">
+          <div class="panel-header">
+            <h2>Simulation Event Log</h2>
+            <button type="button" id="btn-clear-log" class="btn btn-sm btn-ghost">Clear</button>
+          </div>
+          <pre class="terminal-log mono" id="event-log"></pre>
+        </section>
+    </div>
+  </div>
+
+  <!-- MODAL 1: Scheduler Comparison Studio (Image 3, #10) -->
+  <div id="modal-compare" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">⚡</span>
+          <h3>Scheduler Comparison Benchmark</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-compare">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Executes the current workload under all 6 CPU scheduling algorithms in isolated sandboxes to compare waiting times, turnaround times, and system efficiency.
+        </p>
+
+        <div id="compare-winner-banner" class="winner-banner">
+          <span class="trophy-icon">🏆</span>
+          <div class="winner-info">
+            <strong id="winner-title">Best Algorithm: Analyzing...</strong>
+            <p id="winner-desc">Evaluating performance metrics...</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>Algorithm</th>
+                <th>Total Ticks</th>
+                <th>Avg Turnaround</th>
+                <th>Avg Waiting</th>
+                <th>Avg Response</th>
+                <th>CPU Utilization</th>
+                <th>Throughput</th>
+              </tr>
+            </thead>
+            <tbody id="compare-table-body"></tbody>
+          </table>
+        </div>
+
+        <h4 class="chart-section-title">Visual Comparison: Avg Turnaround Time (Lower is Better)</h4>
+        <div class="compare-chart-bars" id="compare-chart-bars"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-re-run-compare">Re-Run Benchmark</button>
+        <button type="button" class="btn btn-ghost" id="btn-close-compare-footer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Banker's Safe Sequence Audit Proof (Image 1, #3) -->
+  <div id="modal-safe-proof" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">🛡️</span>
+          <h3>Banker's Algorithm — Mathematical Proof</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-proof">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="proof-summary" id="proof-summary-box">
+          <h4 id="proof-status-heading">Safety Audit Status</h4>
+          <p id="proof-reason-text">Verifying safe sequence...</p>
+        </div>
+
+        <div class="proof-matrix-wrap">
+          <h4>Initial Available Vector</h4>
+          <div class="vector-badge-row" id="proof-avail-vector"></div>
+
+          <h4 class="mt-4">Step-by-Step State Transition</h4>
+          <div class="table-wrap">
+            <table class="proof-table">
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>Process</th>
+                  <th>Work Before</th>
+                  <th>Need (Max - Alloc)</th>
+                  <th>Need &le; Work?</th>
+                  <th>Allocated Released</th>
+                  <th>New Work</th>
+                </tr>
+              </thead>
+              <tbody id="proof-steps-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+  <!-- MODAL 3: System Node Capacity & Resource Editor -->
+  <div id="modal-settings" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">⚙️</span>
+          <h3>System Node Capacity &amp; Resource Configuration</h3>
+        </div>
+        <button type="button" class="btn-close-modal" id="btn-close-settings">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Configure the simulated cloud node's hardware limits. You can scale capacity live without losing running processes, or save as system defaults to <code>config.json</code>.
+        </p>
+
+        <form id="capacity-form" class="capacity-form-grid">
+          <fieldset class="form-fieldset">
+            <legend>Hardware Node Capacity</legend>
+            <div class="fields-grid-2">
+              <label>Total CPU Cores
+                <input type="number" id="cfg-cpu" min="1" max="128" required />
+                <span class="field-hint">e.g. 16 cores</span>
+              </label>
+              <label>Total RAM (GB)
+                <input type="number" id="cfg-ram" min="1" max="1024" required />
+                <span class="field-hint">e.g. 32 GB</span>
+              </label>
+              <label>Total GPU Units
+                <input type="number" id="cfg-gpu" min="0" max="16" required />
+                <span class="field-hint">e.g. 2 GPUs</span>
+              </label>
+              <label>Total Storage (GB)
+                <input type="number" id="cfg-storage" min="1" max="10000" required />
+                <span class="field-hint">e.g. 1000 GB</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-fieldset">
+            <legend>Memory Status Thresholds</legend>
+            <div class="fields-grid-2">
+              <label>HIGH RAM Alert Threshold
+                <input type="number" id="cfg-high-thresh" min="0.1" max="0.99" step="0.05" required />
+                <span class="field-hint">0.75 = 75% RAM used</span>
+              </label>
+              <label>CRITICAL Alert Threshold
+                <input type="number" id="cfg-crit-thresh" min="0.2" max="1.0" step="0.05" required />
+                <span class="field-hint">0.90 = 90% RAM used</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-fieldset full-col">
+            <legend>Scheduler &amp; Workload Defaults</legend>
+            <div class="fields-grid-2">
+              <label>Default Algorithm
+                <select id="cfg-default-alg">
+                  <option value="Round Robin">Round Robin</option>
+                  <option value="FCFS">FCFS</option>
+                  <option value="Priority">Priority (Non-Preemptive)</option>
+                  <option value="Priority (Preemptive)">Priority (Preemptive)</option>
+                  <option value="SJF">SJF</option>
+                  <option value="SRTF">SRTF</option>
+                </select>
+              </label>
+              <label>Round Robin Quantum (ticks)
+                <input type="number" id="cfg-quantum" min="1" max="20" required />
+                <span class="field-hint">Time slice duration</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-actions-full">
+            <div id="capacity-feedback" class="feedback-msg hidden"></div>
+            <div class="action-buttons-row">
+              <button type="button" id="btn-apply-live-capacity" class="btn btn-primary">
+                ⚡ Update Live Capacity (Keep Processes)
+              </button>
+              <button type="submit" id="btn-save-config-capacity" class="btn btn-secondary">
+                💾 Save to config.json &amp; Reset
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="btn-close-settings-footer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+

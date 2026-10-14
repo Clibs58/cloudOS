@@ -1,0 +1,57 @@
+{
+  "capacity": {
+    "cpu": 16,
+    "ram_gb": 16,
+    "gpu": 1,
+    "storage_gb": 514
+  },
+  "scheduler": {
+    "default_algorithm": "FCFS",
+    "round_robin_quantum": 2
+  },
+  "memory": {
+    "high_threshold": 0.75,
+    "critical_threshold": 0.9
+  },
+  "demo": {
+    "load_on_startup": true,
+    "workloads": [
+      {
+        "burst_time": 12,
+        "cpu": 4,
+        "gpu": 0,
+        "name": "Web Server",
+        "priority": 3,
+        "ram_gb": 8,
+        "storage_gb": 120
+      },
+      {
+        "burst_time": 20,
+        "cpu": 6,
+        "gpu": 1,
+        "name": "ML Training",
+        "priority": 1,
+        "ram_gb": 12,
+        "storage_gb": 200
+      },
+      {
+        "burst_time": 15,
+        "cpu": 2,
+        "gpu": 0,
+        "name": "Database",
+        "priority": 2,
+        "ram_gb": 4,
+        "storage_gb": 150
+      },
+      {
+        "burst_time": 10,
+        "cpu": 2,
+        "gpu": 0,
+        "name": "Analytics",
+        "priority": 4,
+        "ram_gb": 4,
+        "storage_gb": 150
+      }
+    ]
+  }
+}
