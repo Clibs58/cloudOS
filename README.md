@@ -1,4 +1,4 @@
-# CloudOS Studio — Intelligent Cloud Resource Allocation & Process Scheduling Simulator
+# CloudOS Studio: Intelligent Cloud Resource Allocation & Process Scheduling Simulator
 
 A modern, full-featured web-based Operating Systems laboratory and simulation platform modeling **multi-resource allocation** (CPU, RAM, GPU, storage), **CPU scheduling** (FCFS, Round Robin, SJF, SRTF, Preemptive & Non-Preemptive Priority), **deadlock avoidance & detection** (Banker's Algorithm), **multi-core execution**, **virtual memory paging** (LRU/FIFO), and **performance metrics benchmarking**.
 
